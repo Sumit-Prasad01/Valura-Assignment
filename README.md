@@ -79,3 +79,4 @@ tests/      ← all tests, must pass with pytest
 ## Environment
 
 You self-host everything. We do not provide credentials. See `.env.example` for the variables you'll need.
+# Valura-Assignment
