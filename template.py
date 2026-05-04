@@ -27,11 +27,18 @@ list_of_files = [
     # Entry point
     "src/main.py",
 
+    # Config
+    "src/config.py",
+
     # Pipeline orchestrator (guard → classify → route → stream)
     "src/pipeline.py",
 
     # Router (agent name → agent instance)
     "src/router.py",
+
+    # Helper files
+    "src/utils/__init__.py",
+    "src/utils/logger.py",
 
     # Pydantic models — no logic, only schemas
     "src/models/__init__.py",
