@@ -1,9 +1,15 @@
+import os
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    openai_api_key: str = "sk-test"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
+
+    openai_api_key: str = os.getenv("OPENAI_API_KEY")
     model_dev: str = "gpt-4o-mini"
     model_eval: str = "gpt-4.1"
     pipeline_timeout_s: int = 10
@@ -15,10 +21,6 @@ class Settings(BaseSettings):
         if self.environment == "production":
             return self.model_eval
         return self.model_dev
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 
 @lru_cache

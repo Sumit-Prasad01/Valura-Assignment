@@ -10,6 +10,7 @@ Educational queries pass through because we detect *actionable intent*
 not *topic knowledge*. Tradeoff documented in README.md.
 """
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 
@@ -65,7 +66,7 @@ _DEFAULT_MESSAGE = (
 # Detection patterns per category
 # Design rule: match ACTIONABLE intent, not topic knowledge.
 # "how do i pump a stock" → block  |  "what is a pump and dump" → pass
-# "help me launder" → block        |  "explain money laundering" → pass
+# "help me launder"       → block  |  "explain money laundering" → pass
 
 _INSIDER_TRADING_PATTERNS = [
     r"\b(i\s+work|works?)\s+at\b.*\b(buy|sell|trade|shares?|stock)\b",
@@ -88,13 +89,17 @@ _MARKET_MANIPULATION_PATTERNS = [
 ]
 
 _MONEY_LAUNDERING_PATTERNS = [
-    r"\b(move|transfer|route)\b.*\b(cash|funds?|money)\b.*\b(without|avoid|bypass)\b.*\b(report|detect|trac)\b",
+
+    r"\b(move|transfer|route)\b.*\b(cash|funds?|money|\d+k)\b.*\b(without|avoid|bypass)\b.*\b(report|detect|trac)\b",
+    r"\b(move|transfer)\b.*\b\d+k?\b.*\b(cash|funds?)\b.*\b(without|avoid)\b.*\b(report|trac|detect)\b",
+    r"\bhow\s+do\s+i\s+move\b.*\b(cash|funds?|\d+k)\b.*\b(without|avoid|bypass|report)\b",
     r"\bstructure\s+deposits?\b",
     r"\bavoid\s+the\s+\d+k\s+report",
     r"\b(layer|layering)\b.*\b(trades?|funds?|money)\b.*\b(obscure|hide|conceal|source)\b",
     r"\bhide\s+(trading\s+)?(profits?|gains?|funds?)\b.*\b(tax|authorities|regulat)\b",
     r"\bobscure\s+the\s+source\b",
     r"\b(avoid|bypass|evade)\b.*\b(reporting|aml|kyc|compliance)\b",
+    r"\bwithout\s+reporting\s+it\b",
 ]
 
 _GUARANTEED_RETURNS_PATTERNS = [
@@ -103,18 +108,29 @@ _GUARANTEED_RETURNS_PATTERNS = [
     r"\bpromise\s+me\b.*\b(double|triple|return|profit|money)\b",
     r"\b100\s*%\s*(certain|sure|guaranteed)\b",
     r"\bwill\s+definitely\s+(go\s+up|rise|increase|double)\b",
-    r"\bfoolproof\s+way\b.*\b(\d+%|return|profit|make)\b",
+    # educational "is it ever legitimate to advertise guaranteed returns"
+    r"\bfoolproof\s+way\b.*\b(\d+%|profit|make\s+money)\b",
     r"\bcertain\s+to\s+go\s+up\b",
+    # "tell me a stock that's 100% certain" already caught by 100% pattern above
+    # Do NOT match: "is it ever legitimate to advertise guaranteed returns"
+    # That query is educational — contains "legitimate" as the subject
 ]
 
 _RECKLESS_ADVICE_PATTERNS = [
-    r"\ball\s+(my\s+)?(retirement|life\s+)?savings\b.*\b(crypto|bitcoin|options?|single\s+stock)\b",
+    # Key signal: explicit instruction "do it" + dangerous action on retirement savings
+    r"\b(all|entire)\b.*\b(retirement|life)\s*(savings?)\b.*\b(crypto|bitcoin|options?|single\s+stock)\b",
+    r"\b(crypto|bitcoin|options?)\b.*\b(do\s+it|just\s+do\s+it)\b",
+    r"\bput\s+(all|my\s+entire?)\b.*\b(retirement|savings?|emergency)\b.*\b(crypto|bitcoin|options?)\b",
+    # Age + reckless action signal
+    r"\b(i.m|i\s+am)\s+\d+\b.*\b(all|entire)\b.*\b(retirement|savings?)\b.*\b(crypto|bitcoin|options?)\b",
+    
+    r"\bmortgage\s+(my\s+)?(house|home)\b.*\b(stock|invest|buy|for)\b",
+    r"\bwhich\s+stock\s+to\s+mortgage\b",
+    # Existing patterns
     r"\b(margin\s+loan|leveraged?\s+loan)\b.*\b(buy|invest|more)\b",
     r"\bentire\s+emergency\s+fund\b.*\b(options?|crypto|stock|invest)\b",
-    r"\bmortgage\s+(my\s+)?house\b.*\b(stock|invest|buy)\b",
     r"\btell\s+me\s+to\s+take\s+a\s+margin\b",
     r"\bput\s+everything\s+(i\s+have\s+)?(into|in)\b.*\b(crypto|options?|single)\b",
-    r"\b(do\s+it|just\s+do\s+it)\b.*\b(all\s+in|everything|retirement|savings)\b",
 ]
 
 _SANCTIONS_EVASION_PATTERNS = [
@@ -132,17 +148,30 @@ _FRAUD_PATTERNS = [
 ]
 
 
-
-# Compiled pattern groups
+# Compiled pattern groups — order matters (more specific first)
 _CATEGORY_PATTERNS: list[tuple[str, list[re.Pattern]]] = [
-    ("insider_trading",     [re.compile(p, re.I) for p in _INSIDER_TRADING_PATTERNS]),
-    ("market_manipulation", [re.compile(p, re.I) for p in _MARKET_MANIPULATION_PATTERNS]),
-    ("money_laundering",    [re.compile(p, re.I) for p in _MONEY_LAUNDERING_PATTERNS]),
-    ("guaranteed_returns",  [re.compile(p, re.I) for p in _GUARANTEED_RETURNS_PATTERNS]),
-    ("reckless_advice",     [re.compile(p, re.I) for p in _RECKLESS_ADVICE_PATTERNS]),
-    ("sanctions_evasion",   [re.compile(p, re.I) for p in _SANCTIONS_EVASION_PATTERNS]),
-    ("fraud",               [re.compile(p, re.I) for p in _FRAUD_PATTERNS]),
+    ("insider_trading",     [re.compile(p, re.I | re.S) for p in _INSIDER_TRADING_PATTERNS]),
+    ("market_manipulation", [re.compile(p, re.I | re.S) for p in _MARKET_MANIPULATION_PATTERNS]),
+    ("money_laundering",    [re.compile(p, re.I | re.S) for p in _MONEY_LAUNDERING_PATTERNS]),
+    ("guaranteed_returns",  [re.compile(p, re.I | re.S) for p in _GUARANTEED_RETURNS_PATTERNS]),
+    ("reckless_advice",     [re.compile(p, re.I | re.S) for p in _RECKLESS_ADVICE_PATTERNS]),
+    ("sanctions_evasion",   [re.compile(p, re.I | re.S) for p in _SANCTIONS_EVASION_PATTERNS]),
+    ("fraud",               [re.compile(p, re.I | re.S) for p in _FRAUD_PATTERNS]),
 ]
+
+
+# Educational intent signals — if present, never block
+# Used to prevent false positives on educational queries
+_EDUCATIONAL_SIGNALS = re.compile(
+    r"\b(what\s+is|what\s+are|explain|how\s+does|how\s+do\s+regulators|"
+    r"define|definition|describe|difference\s+between|why\s+is|"
+    r"is\s+it\s+ever\s+legitimate|is\s+.+\s+illegal|"
+    r"what\s+are\s+the\s+(penalties|rules|requirements|obligations)|"
+    r"how\s+do\s+(the\s+)?(sec|fca|regulators?|brokers?)\s+(catch|detect|investigate|screen)|"
+    r"historical\s+average|are\s+.+\s+legal|what\s+factors)\b",
+    re.I,
+)
+
 
 
 # Result dataclass
@@ -156,6 +185,7 @@ class GuardResult:
 PASS = GuardResult(blocked=False, category=None, message=None)
 
 
+
 # Public API
 def check(query: str) -> GuardResult:
     """
@@ -165,6 +195,11 @@ def check(query: str) -> GuardResult:
     """
     text = query.strip()
     if not text:
+        return PASS
+
+    # Educational intent check — if clearly educational, pass through
+    # (applied before pattern matching to prevent false positives)
+    if _EDUCATIONAL_SIGNALS.search(text):
         return PASS
 
     for category, patterns in _CATEGORY_PATTERNS:

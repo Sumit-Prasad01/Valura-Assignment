@@ -5,27 +5,24 @@ Each turn is stored as: session_id, role, content, timestamp.
 History is returned as a list of {role, content} dicts — ready to
 inject directly into the OpenAI messages array.
 
-Choice of SQLite over in-memory:
-  - Persists across process restarts (useful for demo)
-  - Zero infra — single file, no Postgres needed
-  - aiosqlite is fully async, no event loop blocking
-  - Tradeoff: not horizontally scalable; fine for this build
+Fix: open a fresh connection per operation — aiosqlite connections
+cannot be reused across async context manager calls.
 """
 from __future__ import annotations
-import json
+
 import time
-import aiosqlite
 from pathlib import Path
+
+import aiosqlite
+
 from src.config import get_settings
 
 
-async def _get_db() -> aiosqlite.Connection:
-    settings = get_settings()
-    db_path = Path(settings.session_db_path)
-    db = await aiosqlite.connect(str(db_path))
+async def _init_db(db: aiosqlite.Connection) -> None:
+    """Create tables and indexes if they don't exist."""
     await db.execute("""
         CREATE TABLE IF NOT EXISTS session_turns (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
             role       TEXT NOT NULL,
             content    TEXT NOT NULL,
@@ -36,13 +33,16 @@ async def _get_db() -> aiosqlite.Connection:
         "CREATE INDEX IF NOT EXISTS idx_session ON session_turns(session_id, ts)"
     )
     await db.commit()
-    return db
+
+
+def _db_path() -> str:
+    return str(Path(get_settings().session_db_path))
 
 
 async def save_turn(session_id: str, role: str, content: str) -> None:
     """Append one turn to the session history."""
-    db = await _get_db()
-    async with db:
+    async with aiosqlite.connect(_db_path()) as db:
+        await _init_db(db)
         await db.execute(
             "INSERT INTO session_turns (session_id, role, content, ts) VALUES (?,?,?,?)",
             (session_id, role, content, time.time()),
@@ -55,8 +55,8 @@ async def get_history(session_id: str, max_turns: int = 10) -> list[dict]:
     Return the last `max_turns` turns for the session.
     Format: [{"role": "user"|"assistant", "content": "..."}]
     """
-    db = await _get_db()
-    async with db:
+    async with aiosqlite.connect(_db_path()) as db:
+        await _init_db(db)
         cursor = await db.execute(
             """
             SELECT role, content FROM session_turns
@@ -67,15 +67,17 @@ async def get_history(session_id: str, max_turns: int = 10) -> list[dict]:
             (session_id, max_turns),
         )
         rows = await cursor.fetchall()
+
     # Reverse so oldest is first (chronological for LLM context)
     return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
 
 
 async def clear_session(session_id: str) -> None:
     """Delete all turns for a session."""
-    db = await _get_db()
-    async with db:
+    async with aiosqlite.connect(_db_path()) as db:
+        await _init_db(db)
         await db.execute(
-            "DELETE FROM session_turns WHERE session_id = ?", (session_id,)
+            "DELETE FROM session_turns WHERE session_id = ?",
+            (session_id,)
         )
         await db.commit()
