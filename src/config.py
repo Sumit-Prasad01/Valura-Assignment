@@ -9,7 +9,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    openai_api_key: str = os.getenv("OPENAI_API_KEY")
+    openai_api_key: str = "sk-proj"
     model_dev: str = "gpt-4o-mini"
     model_eval: str = "gpt-4.1"
     pipeline_timeout_s: int = 10
